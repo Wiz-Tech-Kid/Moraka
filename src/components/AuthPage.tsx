@@ -4,6 +4,7 @@ import { Sparkles, Globe2, ArrowRight, Heart, Users, MapPin } from 'lucide-react
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { signUp, signInWithIdentifier } from '../lib/supabase';
 
 // Normalize and validate Botswana phone numbers
 function normalizeBotswanaPhone(raw: string): string | null {
@@ -71,9 +72,18 @@ export function AuthPage({ onAuth }: AuthPageProps) {
     name: '',
     phone: '',
     city: '',
+    email: '',
+    password: '',
+    username: '',
+    identifier: '', // for login: username | email | phone
   });
   const [step, setStep] = useState(0);
+  const [mode, setMode] = useState<'register' | 'login'>('register');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
   const images = [
     {
@@ -111,25 +121,97 @@ export function AuthPage({ onAuth }: AuthPageProps) {
     return () => clearInterval(interval);
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (step < 2) {
-      setStep(step + 1);
-    } else {
-      // Final step: normalize phone and send normalized value to onAuth
-      const normalized = normalizeBotswanaPhone(formData.phone);
-      const userObj = {
-        name: formData.name,
-        phone: normalized ?? formData.phone,
-        city: formData.city,
-      };
+    setError(null);
 
-      showWelcomeNotification(formData.name);
-      onAuth(userObj);
+    if (mode === 'register') {
+      // multi-step register flow (we still use the step progression UI)
+      if (step < 2) {
+        setStep(step + 1);
+        return;
+      }
+
+      // final registration submit
+      setLoading(true);
+      try {
+        const normalized = normalizeBotswanaPhone(formData.phone) ?? formData.phone;
+        const res: any = await signUp({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          username: formData.username,
+          phone: normalized,
+          city: formData.city,
+        });
+
+        // Updated registration flow to handle email confirmation
+        if (res?.message) {
+          setError(res.message); // Show confirmation email message
+        } else if (res?.error) {
+          setError(res.error.message || 'Signup failed');
+        } else {
+          showWelcomeNotification(formData.name || formData.username || formData.email);
+          onAuth({ name: formData.name, phone: normalized, city: formData.city });
+        }
+      } catch (err: any) {
+        setError(err?.message ?? String(err));
+      } finally {
+        setLoading(false);
+      }
+
+      return;
+    }
+
+    // login flow
+    setLoading(true);
+    try {
+      const identifier = formData.identifier.trim();
+      const password = formData.password;
+      if (!identifier || !password) {
+        setError('Please provide identifier and password');
+        setLoading(false);
+        return;
+      }
+
+      const { data, error: signInError } = await signInWithIdentifier(identifier, password) as any;
+      if (signInError) {
+        setError(signInError.message || 'Login failed');
+      } else {
+        // on successful login, you could fetch profile and call onAuth
+        const userName = data?.user?.user_metadata?.name ?? data?.user?.email ?? identifier;
+        showWelcomeNotification(userName);
+        onAuth({ name: userName, phone: identifier, city: '' });
+      }
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!formData.email) {
+      setError('Please provide your email to reset your password.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(formData.email);
+      if (error) {
+        setError(error.message);
+      } else {
+        setError('Password reset email sent. Please check your inbox.');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const canProceed = () => {
+    if (mode === 'login') return formData.identifier.trim().length > 0 && formData.password.length > 0;
     if (step === 0) return formData.name.trim().length > 0;
     if (step === 1) return normalizeBotswanaPhone(formData.phone) !== null;
     if (step === 2) return formData.city.length > 0;
@@ -354,98 +436,196 @@ export function AuthPage({ onAuth }: AuthPageProps) {
               transition={{ delay: 0.3, type: "spring", stiffness: 150 }}
             >
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Progress Indicator */}
-                <div className="flex gap-2 mb-8">
-                  {[0, 1, 2].map((i) => (
-                    <motion.div
-                      key={i}
-                      className="flex-1 h-2 rounded-full overflow-hidden bg-gray-200"
-                      initial={{ scaleX: 0 }}
-                      animate={{ scaleX: 1 }}
-                      transition={{ delay: i * 0.1 }}
-                    >
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-orange-500 to-orange-600"
-                        initial={{ width: '0%' }}
-                        animate={{ width: step >= i ? '100%' : '0%' }}
-                        transition={{ duration: 0.5, ease: "easeOut" }}
-                      />
-                    </motion.div>
-                  ))}
+                {/* Mode toggle (Register / Login) */}
+                <div className="flex gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className={`flex-1 px-4 py-2 rounded-full ${mode === 'register' ? 'bg-orange-500 text-white' : 'bg-white/50 text-gray-700'}`}
+                  >
+                    Sign up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('login')}
+                    className={`flex-1 px-4 py-2 rounded-full ${mode === 'login' ? 'bg-orange-500 text-white' : 'bg-white/50 text-gray-700'}`}
+                  >
+                    Log in
+                  </button>
                 </div>
 
-                <AnimatePresence mode="wait">
-                  {step === 0 && (
-                    <motion.div
-                      key="name"
-                      initial={{ opacity: 0, x: 50 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -50 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <label className="block mb-2 text-gray-700">
-                        {t('auth.name')}
-                      </label>
+                {mode === 'register' && (
+                  <>
+                    {/* Progress Indicator for multi-step registration */}
+                    <div className="flex gap-2 mb-4">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          className="flex-1 h-2 rounded-full overflow-hidden bg-gray-200"
+                          initial={{ scaleX: 0 }}
+                          animate={{ scaleX: 1 }}
+                          transition={{ delay: i * 0.05 }}
+                        >
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-orange-500 to-orange-600"
+                            initial={{ width: '0%' }}
+                            animate={{ width: step >= i ? '100%' : '0%' }}
+                            transition={{ duration: 0.4, ease: 'easeOut' }}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    <AnimatePresence mode="wait">
+                      {step === 0 && (
+                        <motion.div
+                          key="name"
+                          initial={{ opacity: 0, x: 50 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -50 }}
+                          transition={{ duration: 0.25 }}
+                        >
+                          <label className="block mb-2 text-gray-700">{t('auth.name')}</label>
+                          <input
+                            type="text"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="Ramsy"
+                            className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg"
+                            autoFocus
+                          />
+                        </motion.div>
+                      )}
+
+                      {step === 1 && (
+                        <motion.div
+                          key="phone"
+                          initial={{ opacity: 0, x: 50 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -50 }}
+                          transition={{ duration: 0.25 }}
+                        >
+                          <label className="block mb-2 text-gray-700">{t('auth.phone')}</label>
+                          <input
+                            type="tel"
+                            value={formData.phone}
+                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                            placeholder="+267 XX XXX XXX"
+                            className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg"
+                            autoFocus
+                          />
+                        </motion.div>
+                      )}
+
+                      {step === 2 && (
+                        <motion.div
+                          key="city"
+                          initial={{ opacity: 0, x: 50 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -50 }}
+                          transition={{ duration: 0.25 }}
+                        >
+                          <label className="block mb-2 text-gray-700">{t('auth.city')}</label>
+                          <select
+                            value={formData.city}
+                            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                            className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg appearance-none cursor-pointer"
+                            autoFocus
+                          >
+                            <option value="">Select your city</option>
+                            {cities.map((city) => (
+                              <option key={city} value={city}>
+                                {city}
+                              </option>
+                            ))}
+                          </select>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Registration extra fields (email, username, password) - required on final submit */}
+                    <div className="space-y-3">
+                      <label className="block text-gray-700">Email</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        placeholder="you@example.com"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl"
+                      />
+
+                      <label className="block text-gray-700">Username (optional)</label>
                       <input
                         type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="Ramsy"
-                        className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg"
-                        autoFocus
+                        value={formData.username}
+                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                        placeholder="ramsy123"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl"
                       />
-                    </motion.div>
-                  )}
 
-                  {step === 1 && (
-                    <motion.div
-                      key="phone"
-                      initial={{ opacity: 0, x: 50 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -50 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <label className="block mb-2 text-gray-700">
-                        {t('auth.phone')}
-                      </label>
+                      <label className="block text-gray-700">Password</label>
                       <input
-                        type="tel"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        placeholder="+267 XX XXX XXX"
-                        className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg"
-                        autoFocus
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="Choose a secure password"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl"
                       />
-                    </motion.div>
-                  )}
+                    </div>
+                  </>
+                )}
 
-                  {step === 2 && (
-                    <motion.div
-                      key="city"
-                      initial={{ opacity: 0, x: 50 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -50 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <label className="block mb-2 text-gray-700">
-                        {t('auth.city')}
-                      </label>
-                      <select
-                        value={formData.city}
-                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                        className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all text-lg appearance-none cursor-pointer"
-                        autoFocus
-                      >
-                        <option value="">Select your city</option>
-                        {cities.map((city) => (
-                          <option key={city} value={city}>
-                            {city}
-                          </option>
-                        ))}
-                      </select>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {mode === 'login' && (
+                  <div className="space-y-3">
+                    <label className="block text-gray-700">Email, username or phone</label>
+                    <input
+                      type="text"
+                      value={formData.identifier}
+                      onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
+                      placeholder="you@example.com or ramsy123 or +2677XXXXXXX"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl"
+                    />
+
+                    <label className="block text-gray-700">Password</label>
+                    <input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Your password"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl"
+                    />
+                  </div>
+                )}
+
+                {/* Error / status */}
+                {error && (
+                  <div className="text-sm text-red-600 mb-2">{error}</div>
+                )}
+
+                {/* Privacy Notice Checkbox */}
+                <div className="flex items-center gap-2 mt-4">
+                  <input
+                    type="checkbox"
+                    id="privacy"
+                    checked={privacyAccepted}
+                    onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                    className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                  />
+                  <label htmlFor="privacy" className="text-sm text-gray-600">
+                    I agree to the <a href="/privacy" className="text-orange-600 underline">Privacy Policy</a>.
+                  </label>
+                </div>
+
+                {/* Forgot Password Link */}
+                <div className="mt-4 text-sm text-center">
+                  <button
+                    type="button"
+                    onClick={() => setForgotPassword(true)}
+                    className="text-orange-600 underline hover:text-orange-800"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-3">
@@ -462,16 +642,16 @@ export function AuthPage({ onAuth }: AuthPageProps) {
                   )}
                   <motion.button
                     type="submit"
-                    disabled={!canProceed()}
+                    disabled={!canProceed() || loading}
                     className={`flex-1 px-6 py-4 rounded-xl transition-all flex items-center justify-center gap-2 ${
-                      canProceed()
+                      canProceed() && !loading
                         ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-lg'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }`}
                     whileHover={canProceed() ? { scale: 1.02 } : {}}
                     whileTap={canProceed() ? { scale: 0.98 } : {}}
                   >
-                    {step === 2 ? t('auth.continue') : 'Next'}
+                    {mode === 'login' ? (loading ? 'Logging in...' : 'Log in') : (step === 2 ? (loading ? 'Signing up...' : t('auth.continue')) : 'Next')}
                     <ArrowRight className="w-5 h-5" />
                   </motion.button>
                 </div>
@@ -523,6 +703,40 @@ export function AuthPage({ onAuth }: AuthPageProps) {
             </motion.p>
           </motion.div>
         </div>
+
+        {/* Forgot Password Modal */}
+        {forgotPassword && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+              <h2 className="text-xl font-semibold mb-4">Reset Your Password</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Enter your email address below, and we will send you a link to reset your password.
+              </p>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setForgotPassword(false)}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleForgotPassword}
+                  className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700"
+                >
+                  Send Reset Link
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

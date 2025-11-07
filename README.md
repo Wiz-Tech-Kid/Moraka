@@ -199,6 +199,41 @@ This app runs with local mock data by default (no external backend required). Th
 - **React Hook Form 7.55.0** - Performant form management
 - **Zod** (Ready for validation) - TypeScript-first schema validation
 
+---
+
+## Supabase (optional)
+
+This project can be connected to Supabase for authentication and a simple `profiles` table. Secrets for the client must be provided via Vite env vars (see `.env.example`).
+
+Quick setup:
+
+- Create a Supabase project: https://app.supabase.com/
+- Create a table named `profiles` and mirror the columns used by the client (example SQL below).
+- Add the project URL and anon key to your local env using the `VITE_` prefix (see `.env.example`).
+
+Example `profiles` table SQL (run in Supabase SQL editor):
+
+```sql
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  username text unique,
+  phone text unique,
+  city text,
+  email text,
+  created_at timestamptz default now()
+);
+
+create index if not exists profiles_username_idx on profiles (username);
+create index if not exists profiles_phone_idx on profiles (phone);
+```
+
+Notes:
+- The client expects the public (anon) key and project URL to be available as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+- For server-side-only operations (RPCs, service role), store the service role key outside the client (do not expose it in VITE_ envs).
+- The repository contains `src/lib/supabase.ts` with helper functions: `signUp`, `signInWithIdentifier`, and `findEmailByIdentifier`.
+
+
 ### **Notifications**
 
 - **Sonner** - Beautiful toast notification system
