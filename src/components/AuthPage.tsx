@@ -4,7 +4,7 @@ import { Sparkles, Globe2, ArrowRight, Heart, Users, MapPin } from 'lucide-react
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { signUp, signInWithIdentifier } from '../lib/supabase';
+import { signUp, signInWithIdentifier, sendPasswordReset } from '../lib/supabase';
 
 // Normalize and validate Botswana phone numbers
 function normalizeBotswanaPhone(raw: string): string | null {
@@ -197,14 +197,14 @@ export function AuthPage({ onAuth }: AuthPageProps) {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(formData.email);
+      const { error } = await sendPasswordReset(formData.email);
       if (error) {
-        setError(error.message);
+        setError(error.message || 'Failed to send password reset email.');
       } else {
         setError('Password reset email sent. Please check your inbox.');
       }
-    } catch (err) {
-      setError('An unexpected error occurred.');
+    } catch (err: any) {
+      setError(err?.message ?? 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }

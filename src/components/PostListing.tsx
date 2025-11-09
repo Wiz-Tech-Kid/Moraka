@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Info, Sparkles, Check } from 'lucide-react';
-import { FoodListing, User } from '../App';
+import { Listing, User } from '../App';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotifications } from '../contexts/NotificationContext';
 
 interface PostListingProps {
-  onSubmit: (listing: Omit<FoodListing, 'id' | 'postedDate'>) => void;
+  onSubmit: (listing: Omit<Listing, 'id' | 'postedDate'>) => void;
   onCancel: () => void;
   user: User;
 }
@@ -17,13 +17,27 @@ const cities = [
   'Mochudi', 'Mahalapye',
 ];
 
-const categories: Array<{ value: FoodListing['category']; label: string; labelTn: string; icon: string }> = [
-  { value: 'vegetables', label: 'Vegetables', labelTn: 'Merogo', icon: '🥬' },
-  { value: 'fruit', label: 'Fruit', labelTn: 'Maungo', icon: '🍎' },
-  { value: 'bread', label: 'Bread & Bakery', labelTn: 'Borotho', icon: '🍞' },
-  { value: 'grains', label: 'Grains & Seeds', labelTn: 'Dijô le Dipeu', icon: '🌾' },
-  { value: 'dairy', label: 'Dairy', labelTn: 'Maši', icon: '🥛' },
-  { value: 'other', label: 'Other', labelTn: 'Tse Dingwe', icon: '🍱' },
+const categories: Array<{ value: Listing['category']; label: string; labelTn: string; icon: string; group: string }> = [
+  // Food Items
+  { value: 'vegetables', label: 'Vegetables', labelTn: 'Merogo', icon: '🥬', group: 'Food' },
+  { value: 'fruit', label: 'Fruit', labelTn: 'Maungo', icon: '🍎', group: 'Food' },
+  { value: 'bread', label: 'Bread & Bakery', labelTn: 'Borotho', icon: '🍞', group: 'Food' },
+  { value: 'grains', label: 'Grains & Seeds', labelTn: 'Dijô le Dipeu', icon: '🌾', group: 'Food' },
+  { value: 'dairy', label: 'Dairy', labelTn: 'Maši', icon: '🥛', group: 'Food' },
+  { value: 'food-other', label: 'Other Food', labelTn: 'Dijo Tse Dingwe', icon: '🍱', group: 'Food' },
+  
+  // Clothing
+  { value: 'clothing', label: 'Clothing', labelTn: 'Diaparo', icon: '👕', group: 'Clothing' },
+  
+  // Kitchen & Household
+  { value: 'kitchen', label: 'Kitchen Items', labelTn: 'Dilo Tsa Kichineng', icon: '🍽️', group: 'Household' },
+  { value: 'household', label: 'Household Items', labelTn: 'Dilo Tsa Gae', icon: '🏠', group: 'Household' },
+  
+  // Education
+  { value: 'education', label: 'Education', labelTn: 'Thuto', icon: '📚', group: 'Education' },
+  
+  // Other
+  { value: 'other', label: 'Other', labelTn: 'Tse Dingwe', icon: '📦', group: 'Other' },
 ];
 
 const pickupLocations = [
@@ -38,13 +52,20 @@ export function PostListing({ onSubmit, onCancel, user }: PostListingProps) {
     title: '',
     description: '',
     city: user.city,
-    category: 'vegetables' as FoodListing['category'],
+    category: 'vegetables' as Listing['category'],
     quantity: '',
     postedBy: user.name,
     pickupLocation: '',
     customPickupLocation: '',
     availableUntil: '',
   });
+
+  // Group categories by type
+  const groupedCategories = categories.reduce((acc, cat) => {
+    if (!acc[cat.group]) acc[cat.group] = [];
+    acc[cat.group].push(cat);
+    return acc;
+  }, {} as Record<string, typeof categories>);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
@@ -161,7 +182,7 @@ export function PostListing({ onSubmit, onCancel, user }: PostListingProps) {
                 <strong>Everything on Moraka is 100% free!</strong>
               </p>
               <p className="mb-2">
-                Your contact information will be shared with people who request your food. 
+                Your contact information will be shared with people who request your items. 
                 Coordination happens via WhatsApp or SMS.
               </p>
               <p>
@@ -171,20 +192,20 @@ export function PostListing({ onSubmit, onCancel, user }: PostListingProps) {
           </motion.div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Food Title */}
+            {/* Item Title */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
             >
               <label className="block mb-2 text-gray-700">
-                {t('post.foodTitle')} *
+                {t('post.itemTitle')} *
               </label>
               <input
                 type="text"
                 value={formData.title}
                 onChange={(e) => updateField('title', e.target.value)}
-                placeholder={language === 'en' ? 'e.g., Fresh Vegetables from Garden' : 'sekai., Merogo e Mesha go Tswa mo Tshingwaneng'}
+                placeholder={language === 'en' ? 'e.g., Children\'s Clothes, School Books, Kitchen Pots' : 'sekai., Diaparo tsa Bana, Dibuka tsa Sekolo, Dipitsa tsa Kichine'}
                 className={`w-full px-4 py-4 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                   errors.title ? 'border-red-500' : 'border-gray-200'
                 }`}
@@ -248,7 +269,7 @@ export function PostListing({ onSubmit, onCancel, user }: PostListingProps) {
               <textarea
                 value={formData.description}
                 onChange={(e) => updateField('description', e.target.value)}
-                placeholder={language === 'en' ? 'Describe the food - quality, freshness, how much, etc.' : 'Tlhalosa dijo - boleng, go foufala, bokae, jj.'}
+                placeholder={language === 'en' ? 'Describe the items - condition, quality, size, etc.' : 'Tlhalosa dilo - maemo, boleng, bogolo, jj.'}
                 rows={4}
                 className={`w-full px-4 py-4 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                   errors.description ? 'border-red-500' : 'border-gray-200'

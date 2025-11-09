@@ -32,7 +32,9 @@ export async function signUp(opts: {
 }) {
   const { email, password, name, username, phone, city } = opts;
 
-  const { data: signUpData, error: signUpError } = await supabase.auth.signUp(
+  // Some versions of @supabase/supabase-js have differing typings for signUp metadata/options.
+  // Cast to any to avoid type mismatches while still calling the runtime method.
+  const { data: signUpData, error: signUpError } = await (supabase.auth as any).signUp(
     { email, password },
     { data: { name, username, phone, city } }
   );
@@ -57,8 +59,7 @@ export async function signUp(opts: {
           phone: phone ?? null,
           city: city ?? null,
           email,
-        },
-        { returning: 'minimal' }
+        }
       );
     }
   } catch (err) {
@@ -98,6 +99,23 @@ export async function signInWithIdentifier(identifier: string, password: string)
 export async function getProfileById(id: string) {
   const { data, error } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle();
   return { data, error };
+}
+
+// Send a password reset email (Supabase will send a link to the user)
+export async function sendPasswordReset(email: string, redirectTo?: string) {
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  return { data, error };
+}
+
+// Helper to complete auth session from a redirect URL (useful if you're implementing a reset page)
+export async function getSessionFromUrl() {
+  try {
+    // getSessionFromUrl may not be present in types for some supabase versions; cast to any
+    const result = await (supabase.auth as any).getSessionFromUrl();
+    return result;
+  } catch (error) {
+    return { error };
+  }
 }
 
 export default supabase;

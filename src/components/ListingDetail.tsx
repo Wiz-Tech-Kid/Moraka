@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { ArrowLeft, MapPin, Calendar, User, Gift, Package, MessageCircle, Phone, Heart } from 'lucide-react';
-import { FoodListing } from '../App';
+import { Listing } from '../App';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -8,7 +8,7 @@ import { ShareButton } from './ShareButton';
 import { LocationMap } from './LocationMap';
 
 interface ListingDetailProps {
-  listing: FoodListing;
+  listing: Listing;
   onBack: () => void;
 }
 
@@ -18,7 +18,12 @@ const categoryIcons: Record<string, string> = {
   fruit: '🍎',
   grains: '🌾',
   dairy: '🥛',
-  other: '🍱',
+  'food-other': '🍱',
+  clothing: '👕',
+  kitchen: '🍽️',
+  education: '📚',
+  household: '🏠',
+  other: '📦',
 };
 
 export function ListingDetail({ listing, onBack }: ListingDetailProps) {
